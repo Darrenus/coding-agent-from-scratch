@@ -1,0 +1,257 @@
+{
+  "vague": [
+    {
+      "grep_first": true,
+      "steps": 4,
+      "prompt": 12802,
+      "completion": 886,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "read_file",
+        "grep",
+        "read_file",
+        "read_file"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 4,
+      "prompt": 11836,
+      "completion": 790,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file"
+      ]
+    },
+    {
+      "grep_first": false,
+      "steps": 3,
+      "prompt": 5101,
+      "completion": 714,
+      "tools": [
+        "list_files",
+        "grep",
+        "read_file",
+        "grep"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 3,
+      "prompt": 6060,
+      "completion": 837,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "read_file"
+      ]
+    },
+    {
+      "grep_first": false,
+      "steps": 4,
+      "prompt": 10227,
+      "completion": 782,
+      "tools": [
+        "list_files",
+        "grep",
+        "read_file",
+        "grep",
+        "read_file"
+      ]
+    },
+    {
+      "grep_first": false,
+      "steps": 3,
+      "prompt": 5232,
+      "completion": 877,
+      "tools": [
+        "list_files",
+        "grep",
+        "read_file",
+        "grep"
+      ]
+    },
+    {
+      "grep_first": false,
+      "steps": 4,
+      "prompt": 11154,
+      "completion": 1204,
+      "tools": [
+        "list_files",
+        "grep",
+        "read_file",
+        "grep",
+        "read_file",
+        "read_file",
+        "read_file"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 3,
+      "prompt": 6137,
+      "completion": 728,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "read_file"
+      ]
+    },
+    {
+      "grep_first": false,
+      "steps": 3,
+      "prompt": 5131,
+      "completion": 881,
+      "tools": [
+        "list_files",
+        "grep",
+        "read_file",
+        "grep"
+      ]
+    },
+    {
+      "grep_first": false,
+      "steps": 3,
+      "prompt": 5977,
+      "completion": 595,
+      "tools": [
+        "list_files",
+        "grep",
+        "read_file",
+        "read_file"
+      ]
+    }
+  ],
+  "detailed": [
+    {
+      "grep_first": true,
+      "steps": 3,
+      "prompt": 5118,
+      "completion": 609,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 3,
+      "prompt": 5389,
+      "completion": 771,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "grep"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 3,
+      "prompt": 6253,
+      "completion": 794,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "read_file"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 3,
+      "prompt": 5347,
+      "completion": 650,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "grep"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 4,
+      "prompt": 11078,
+      "completion": 784,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "grep",
+        "read_file",
+        "read_file",
+        "read_file"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 3,
+      "prompt": 5095,
+      "completion": 411,
+      "tools": [
+        "grep",
+        "list_files",
+        "grep",
+        "read_file"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 3,
+      "prompt": 5375,
+      "completion": 712,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "grep"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 3,
+      "prompt": 5182,
+      "completion": 614,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 3,
+      "prompt": 5083,
+      "completion": 375,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "grep"
+      ]
+    },
+    {
+      "grep_first": true,
+      "steps": 3,
+      "prompt": 5255,
+      "completion": 552,
+      "tools": [
+        "grep",
+        "list_files",
+        "grep",
+        "read_file"
+      ]
+    }
+  ]
+}
