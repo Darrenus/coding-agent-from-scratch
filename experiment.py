@@ -24,7 +24,8 @@ GREP_SCHEMA = next(t for t in agent.TOOLS if t["function"]["name"] == "grep")
 def one_trial(description):
     """跑一次，返回这次的几个指标。"""
     GREP_SCHEMA["function"]["description"] = description
-    outcome = agent.run_agent(TASK, verbose=False)
+    # outcome = agent.run_agent(TASK, verbose=False)
+    outcome = agent.run_agent(TASK, verbose=False, approve=agent.always_approve)
     tools = outcome["tools"]
     return {
         "grep_first": bool(tools) and tools[0] == "grep",

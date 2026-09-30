@@ -1,0 +1,178 @@
+{
+  "target": "cart_dirty.py",
+  "records": [
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "steps": 5,
+      "prompt": 10012,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 4,
+      "prompt": 4830,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 8,
+      "prompt": 33976,
+      "edits": [
+        "normalized"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 6,
+      "prompt": 29188,
+      "edits": []
+    },
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "steps": 8,
+      "prompt": 35247,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 8,
+      "prompt": 46651,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 5,
+      "prompt": 7496,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 6,
+      "prompt": 29384,
+      "edits": []
+    },
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "steps": 6,
+      "prompt": 32228,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 8,
+      "prompt": 40110,
+      "edits": [
+        "normalized",
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 8,
+      "prompt": 25995,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 5,
+      "prompt": 18232,
+      "edits": []
+    }
+  ],
+  "edits": [
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "kind": "exact",
+      "step": 3,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"    TAX_RATE = 0.05\", \"new_str\": \"    TAX_RATE = 0.08\"}",
+      "result": "已修改 cart_dirty.py：exact 匹配"
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "kind": "exact",
+      "step": 2,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"    def subtotal(self):   \\n        total = 0   \\n        for item in self.items:   \\n            total += item[\\\"price\\\"] * item[\\\"qty\\\"]   \\n        return total   \", \"new_str\": \"    def subtotal(self):   \\n        return sum(item[\\\"price\\\"] * item[\\\"qty\\\"] for item in self.items)   \"}",
+      "result": "已修改 cart_dirty.py：exact 匹配"
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "kind": "normalized",
+      "step": 7,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"    def add(self, name, price, qty=1):\\n        if qty <= 0:\\n            raise ValueError(\\\"数量必须为正\\\")\", \"new_str\": \"    def add(self, name, price, qty=1):\\n        if price < 0:\\n            raise ValueError(\\\"价格不能为负\\\")\\n        if qty <= 0:\\n            raise ValueError(\\\"数量必须为正\\\")\"}",
+      "result": "已修改 cart_dirty.py：normalized 匹配"
+    },
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "kind": "exact",
+      "step": 3,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"class Cart:   \\n    TAX_RATE = 0.05   \", \"new_str\": \"class Cart:   \\n    TAX_RATE = 0.08   \"}",
+      "result": "已修改 cart_dirty.py：exact 匹配"
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "kind": "exact",
+      "step": 3,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"    def subtotal(self):   \\n        total = 0   \\n        for item in self.items:   \\n            total += item[\\\"price\\\"] * item[\\\"qty\\\"]   \\n        return total   \", \"new_str\": \"    def subtotal(self):   \\n        return sum(item[\\\"price\\\"] * item[\\\"qty\\\"] for item in self.items)   \"}",
+      "result": "已修改 cart_dirty.py：exact 匹配"
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "kind": "exact",
+      "step": 3,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"        if qty <= 0:   \\n            raise ValueError(\\\"数量必须为正\\\")   \\n        self.items.append(\", \"new_str\": \"        if qty <= 0:   \\n            raise ValueError(\\\"数量必须为正\\\")   \\n        if price < 0:   \\n            raise ValueError(\\\"价格不能为负\\\")   \\n        self.items.append(\"}",
+      "result": "已修改 cart_dirty.py：exact 匹配"
+    },
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "kind": "exact",
+      "step": 4,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"    TAX_RATE = 0.05\", \"new_str\": \"    TAX_RATE = 0.08\"}",
+      "result": "已修改 cart_dirty.py：exact 匹配"
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "kind": "normalized",
+      "step": 3,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"    def subtotal(self):\\n        total = 0\\n        for item in self.items:\\n            total += item[\\\"price\\\"] * item[\\\"qty\\\"]\\n        return total\", \"new_str\": \"    def subtotal(self):\\n        return sum(item[\\\"price\\\"] * item[\\\"qty\\\"] for item in self.items)\"}",
+      "result": "已修改 cart_dirty.py：normalized 匹配"
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "kind": "exact",
+      "step": 5,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"    def subtotal(self):\\n        return sum(item[\\\"price\\\"] * item[\\\"qty\\\"] for item in self.items)\", \"new_str\": \"    def subtotal(self):   \\n        return sum(item[\\\"price\\\"] * item[\\\"qty\\\"] for item in self.items)   \"}",
+      "result": "已修改 cart_dirty.py：exact 匹配"
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "kind": "exact",
+      "step": 4,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"    def add(self, name, price, qty=1):   \\n        if qty <= 0:   \\n            raise ValueError(\\\"数量必须为正\\\")   \", \"new_str\": \"    def add(self, name, price, qty=1):   \\n        if price < 0:   \\n            raise ValueError(\\\"价格不能为负\\\")   \\n        if qty <= 0:   \\n            raise ValueError(\\\"数量必须为正\\\")   \"}",
+      "result": "已修改 cart_dirty.py：exact 匹配"
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "records": [
+    {
+      "task": "cart.py 里的税率要从 5% 改成 8%。",
+      "steps": 5,
+      "prompt": 7048,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 4,
+      "prompt": 4590,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 5,
+      "prompt": 7603,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 8,
+      "prompt": 48411,
+      "edits": [
+        "其他"
+      ]
+    },
+    {
+      "task": "cart.py 里的税率要从 5% 改成 8%。",
+      "steps": 6,
+      "prompt": 10659,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 6,
+      "prompt": 11403,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 6,
+      "prompt": 14412,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 5,
+      "prompt": 14832,
+      "edits": []
+    },
+    {
+      "task": "cart.py 里的税率要从 5% 改成 8%。",
+      "steps": 5,
+      "prompt": 8488,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 4,
+      "prompt": 4450,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 8,
+      "prompt": 23752,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 4,
+      "prompt": 8355,
+      "edits": []
+    }
+  ],
+  "notable": []
+}

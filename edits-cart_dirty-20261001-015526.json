@@ -1,0 +1,121 @@
+{
+  "target": "cart_dirty.py",
+  "records": [
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "steps": 5,
+      "prompt": 8630,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 6,
+      "prompt": 21682,
+      "edits": [
+        "trailing-space"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 4,
+      "prompt": 5124,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 6,
+      "prompt": 27753,
+      "edits": []
+    },
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "steps": 5,
+      "prompt": 7550,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 8,
+      "prompt": 30632,
+      "edits": [
+        "trailing-space"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 4,
+      "prompt": 4599,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 8,
+      "prompt": 50914,
+      "edits": []
+    },
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "steps": 4,
+      "prompt": 6590,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 6,
+      "prompt": 10762,
+      "edits": [
+        "trailing-space"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 7,
+      "prompt": 17918,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 5,
+      "prompt": 15103,
+      "edits": []
+    }
+  ],
+  "notable": [
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "kind": "trailing-space",
+      "step": 4,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"    def subtotal(self):\\n        total = 0\\n        for item in self.items:\\n            total += item[\\\"price\\\"] * item[\\\"qty\\\"]\\n        return total\", \"new_str\": \"    def subtotal(self):\\n        return sum(item[\\\"price\\\"] * item[\\\"qty\\\"] for item in self.items)\"}",
+      "result": "已修改 cart_dirty.py：trailing-space 匹配"
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "kind": "trailing-space",
+      "step": 7,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"    def subtotal(self):\\n        total = 0\\n        for item in self.items:\\n            total += item[\\\"price\\\"] * item[\\\"qty\\\"]\\n        return total\", \"new_str\": \"    def subtotal(self):\\n        return sum(item[\\\"price\\\"] * item[\\\"qty\\\"] for item in self.items)\"}",
+      "result": "已修改 cart_dirty.py：trailing-space 匹配"
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "kind": "trailing-space",
+      "step": 2,
+      "tool": "edit_file",
+      "args": "{\"path\": \"cart_dirty.py\", \"old_str\": \"    def subtotal(self):\\n        total = 0\\n        for item in self.items:\\n            total += item[\\\"price\\\"] * item[\\\"qty\\\"]\\n        return total\", \"new_str\": \"    def subtotal(self):\\n        return sum(item[\\\"price\\\"] * item[\\\"qty\\\"] for item in self.items)\"}",
+      "result": "已修改 cart_dirty.py：trailing-space 匹配"
+    }
+  ]
+}

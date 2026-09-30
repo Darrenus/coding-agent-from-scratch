@@ -1,0 +1,103 @@
+{
+  "target": "cart_dirty.py",
+  "records": [
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "steps": 4,
+      "prompt": 6134,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 7,
+      "prompt": 15085,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 7,
+      "prompt": 14082,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 7,
+      "prompt": 38073,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "steps": 5,
+      "prompt": 9637,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 7,
+      "prompt": 28040,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 6,
+      "prompt": 7760,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 8,
+      "prompt": 44168,
+      "edits": [
+        "exact",
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 里的税率要从 5% 改成 8%。",
+      "steps": 8,
+      "prompt": 28521,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.subtotal 方法请用 sum() 一行实现，行为保持不变。",
+      "steps": 7,
+      "prompt": 11506,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.add 方法要拒绝价格为负的商品，抛 ValueError。",
+      "steps": 5,
+      "prompt": 9507,
+      "edits": [
+        "exact"
+      ]
+    },
+    {
+      "task": "cart_dirty.py 的 Cart.discount 边界检查有问题，percent 等于 100 应该是合法的。",
+      "steps": 6,
+      "prompt": 13387,
+      "edits": [
+        "exact"
+      ]
+    }
+  ],
+  "notable": []
+}
