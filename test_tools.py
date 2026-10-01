@@ -199,5 +199,27 @@ class BashTests(unittest.TestCase):
         self.assertIn("省略", out)
         self.assertLess(len(out), 12000)
 
+class DelegateTests(unittest.TestCase):
+    def test_sub_agent_cannot_delegate_further(self):
+        import agent as A
+        A._depth = A.MAX_DELEGATE_DEPTH
+        try:
+            out = A.delegate("随便问点什么")
+            self.assertTrue(out.startswith("错误"))
+            self.assertIn("不能再派", out)
+        finally:
+            A._depth = 0
+
+    def test_read_only_set_excludes_writes(self):
+        import agent as A
+        self.assertNotIn("edit_file", A.READ_ONLY_TOOLS)
+        self.assertNotIn("bash", A.READ_ONLY_TOOLS)
+        self.assertNotIn("delegate", A.READ_ONLY_TOOLS)
+
+    def test_restricted_tool_is_refused_even_if_called(self):
+        # schema 里没给，不代表模型不会调——分发层要有自己的闸
+        import agent as A
+        self.assertTrue(set(A.READ_ONLY_TOOLS).issubset(set(A.TOOL_REGISTRY)))
+
 if __name__ == "__main__":
     unittest.main()

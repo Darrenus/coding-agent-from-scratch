@@ -28,7 +28,7 @@ class Task(NamedTuple):
     expect: tuple          # 答案里必须出现的关键词之一
     fixture: str = ""      # fixtures/ 下的子目录名；空表示只读任务
     verify: str = ""       # 跑完后用来独立复验的命令，空表示不复验
-
+    require_all: bool = False
 
 TASKS = [
     Task("docker-image",
@@ -51,6 +51,23 @@ REPAIR_TASKS = [
          verify="python3 -m unittest test_shop"),
 ]
 
+BREADTH_TASKS = [
+    Task("environments",
+         "mini-swe-agent 里有哪些 Environment 实现？逐个给出类名，"
+         "并说明各自的 execute 方法有什么关键差异。",
+         ("BubblewrapEnvironment", "ContreeEnvironment", "SingularityEnvironment"),
+         require_all=True),
+    Task("models",
+         "mini-swe-agent 里有哪些 Model 实现？逐个给出类名，"
+         "并说明它们在统计 cost 和处理 API 错误上有什么差异。",
+         ("PortkeyModel", "RequestyModel", "OpenRouterModel"),
+         require_all=True),
+    Task("run-entrypoints",
+         "src/minisweagent/run/ 下有哪些入口脚本？逐个给出文件名和它的职责，"
+         "并说明它们各自怎么组装 agent、model 和 environment。",
+         ("programbench", "swebench_single", "hello_world"),
+         require_all=True),
+]
 
 def _apply(config):
     """把配置写进 agent 的全局开关，返回旧值用于还原。
@@ -98,21 +115,31 @@ def run_once(task, config, root, max_steps):
 
     verified = _verify(task, workspace)
     answer = out["answer"] or ""
-    correct = verified if verified is not None else any(k and k in answer for k in task.expect)
+    if verified is not None:
+        correct = verified
+    elif task.require_all:
+        correct = all(k in answer for k in task.expect)
+    else:
+        correct = any(k and k in answer for k in task.expect)
 
     return {
         "task": task.id, "correct": bool(correct),
+        "finished": 1 if out["exit_reason"] == "finished" else 0,
         "steps": out["steps"], "prompt": out["prompt"], "cached": out["cached"],
-        "uncached": out["prompt"] - out["cached"], "completion": out["completion"],
+        "completion": out["completion"],
+        # uncached 含子 agent：主循环未命中 + 子 agent 未命中
+        "uncached": (out["prompt"] - out["cached"])
+                    + (out.get("sub_prompt", 0) - out.get("sub_cached", 0)),
+        "sub_calls": out.get("sub_calls", 0),
+        "sub_prompt": out.get("sub_prompt", 0),
+        "sub_completion": out.get("sub_completion", 0),
+        "total_prompt": out["prompt"] + out.get("sub_prompt", 0),
         "chars": sum(context.profile(out["messages"]).values()),
         "seconds": round(time.time() - started, 1),
         "tools": out["tools"], "exit_reason": out["exit_reason"], "answer": answer,
     }
-
-
-METRICS = ("steps", "prompt", "uncached", "completion", "chars", "seconds")
-
-
+METRICS = ("finished", "steps", "chars", "prompt", "sub_prompt", "total_prompt", "uncached")
+RATE_METRICS = {"finished"}
 def run_suite(arms, tasks, repeats=3, max_steps=15, root=".", tag="eval"):
     """arms: {名字: 配置 dict}。基线（第一个）会被自动复制成 A/A 对照组。"""
     names = list(arms)
@@ -159,7 +186,8 @@ def report(rows, baseline):
     for a in arms:
         g = agg[a]
         print(f"{a:<18}{g['correct']:>4}/{g['n']:<3}"
-              + "".join(f"{g[m]:>11,.1f}" for m in METRICS))
+              + "".join(f"{g[m]:>10.0%} " if m in RATE_METRICS else f"{g[m]:>11,.1f}"
+                        for m in METRICS))
 
     if aa not in agg:
         return
@@ -171,12 +199,15 @@ def report(rows, baseline):
 
     for m in METRICS:
         base = (agg[baseline][m] + agg[aa][m]) / 2 or 1
-        floor = abs(agg[aa][m] - agg[baseline][m]) / base
-        cells = []
-        for a in others:
-            effect = abs(agg[a][m] - base) / base
-            cells.append(f"{effect:>11.0%} {'✓' if effect > floor * 1.5 else '✗'}")
-        print(f"{m:<12}{base:>12,.0f}{floor:>7.0%} " + "".join(f"{c:>14}" for c in cells))
+        if m in RATE_METRICS:                    # 比率用绝对百分点，和下面的正确率一致
+            floor = abs(agg[aa][m] - agg[baseline][m])
+            effects = [abs(agg[a][m] - base) for a in others]
+        else:                                    # 其余用相对变化
+            floor = abs(agg[aa][m] - agg[baseline][m]) / base
+            effects = [abs(agg[a][m] - base) / base for a in others]
+        cells = [f"{e:>11.0%} {'✓' if e > floor * 1.5 else '✗'}" for e in effects]
+        cell = f"{base:>12.0%}" if m in RATE_METRICS else f"{base:>12,.0f}"
+        print(f"{m:<12}{cell}{floor:>7.0%} " + "".join(f"{c:>14}" for c in cells))
 
     # 正确率单独算：它是比率不是均值，底噪要用两条 A/A 的通过率之差
     def rate(a):

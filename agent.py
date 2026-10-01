@@ -1,4 +1,4 @@
-"""HE RONG从零手搓的 coding agent。"""
+"""从零手搓的 coding agent"""
 import json
 import os
 import re
@@ -11,18 +11,35 @@ API_URL = "https://api.deepseek.com/v1/chat/completions"
 MODEL = "deepseek-v4-flash"
 KEY_PATH = os.path.expanduser("~/.config/agent-from-scratch/env")
 
+MAIN_TOOLS = None      # None = 全部工具；设成集合可限制主 agent（用于消融）
 MAX_HITS = 200
 MAX_READ_LINES = 400
+MAIN_MAX_READ_LINES = None
 RANGE_READS = True
 BASH_TIMEOUT = 60
 MAX_BASH_OUTPUT = 8000
 REQUIRE_SANDBOX = True       # 沙箱不可用时拒绝执行，而不是降级放行
+READ_ONLY_TOOLS = {"read_file", "list_files", "grep"}
+SUB_AGENT_STEPS = 8
+MAX_DELEGATE_DEPTH = 1
+
+_depth = 0
+_sub_usage = {"calls": 0, "steps": 0, "prompt": 0, "cached": 0, "completion": 0}
 
 WORKSPACE = os.path.realpath(os.environ.get("AGENT_WORKSPACE", "."))
 assert os.path.isabs(WORKSPACE) and WORKSPACE != os.sep, f"WORKSPACE 不合法: {WORKSPACE!r}"
 
 DENY_PATTERNS = (".env", ".git/", "id_rsa", ".pem", ".key", "credential", ".netrc")
 
+def _read_cap():
+    """主 agent 和子 agent 可以有不同的读取上限。
+
+    用来把「模型会不会主动委派」和「委派有没有用」这两个问题分开：
+    勒紧主 agent 的读取能力，它就不得不派出去。
+    """
+    if _depth == 0 and MAIN_MAX_READ_LINES is not None:
+        return MAIN_MAX_READ_LINES
+    return MAX_READ_LINES
 
 def safe_path(path):
     """解析路径，拒绝越界和敏感文件。返回绝对路径。"""
@@ -99,10 +116,11 @@ def read_file(path, start=None, end=None):
         return f"错误：{path} 共 {total} 行，start={start} 超出范围。"
     last = min(total, end or total)
 
+    cap = _read_cap()
     note = ""
-    if last - first + 1 > MAX_READ_LINES:
-        last = first + MAX_READ_LINES - 1
-        note = (f"\n（已截断到 {MAX_READ_LINES} 行。文件共 {total} 行，"
+    if last - first + 1 > cap:
+        last = first + cap - 1
+        note = (f"\n（已截断到 {cap} 行。文件共 {total} 行，"
                 f"用 start={last + 1} 继续读。）")
 
     body = "\n".join(f"{i:6d}\t{lines[i - 1]}" for i in range(first, last + 1))
@@ -247,6 +265,39 @@ def bash(command):
 
     return f"{out}\n[退出码 {proc.returncode}]"
 
+@tool(
+    name="delegate",
+    description=(
+        "派一个只读子 agent 去调查问题，返回它的结论。"
+        "关键区别：子 agent 读过的文件内容不会进入你的上下文；"
+        "而你自己读的每一个文件，全文都会留在对话历史里，并在之后的每一轮重新发送。"
+        "所以凡是「要翻好几个文件才能回答」的子问题，派出去比自己逐个读便宜得多。"
+        "问题要具体、自包含：子 agent 看不到你的对话。"
+    ),
+    properties={"question": {"type": "string", "description": "交给子 agent 的完整问题"}},
+    required=["question"],
+)
+def delegate(question):
+    """只读子 agent。轨迹用完即弃，只有结论回到主上下文。"""
+    global _depth
+    if _depth >= MAX_DELEGATE_DEPTH:
+        return "错误：子 agent 不能再派子 agent，请自己完成这次调查。"
+
+    _depth += 1
+    try:
+        out = run_agent(question, max_steps=SUB_AGENT_STEPS, verbose=False,
+                        approve=always_approve, repo_map=True,
+                        allowed_tools=READ_ONLY_TOOLS)
+    finally:
+        _depth -= 1
+
+    _sub_usage["calls"] += 1
+    for key in ("steps", "prompt", "cached", "completion"):
+        _sub_usage[key] += out[key]
+
+    answer = out["answer"] or "(子 agent 没有给出结论)"
+    return f"{answer}\n\n[子 agent 用了 {out['steps']} 步、{out['prompt']:,} 输入 token]"
+
 def run_tool(name, arguments_json):
     """执行一次工具调用。永远返回字符串，永远不抛异常。"""
     if name not in TOOL_REGISTRY:
@@ -298,6 +349,9 @@ SYSTEM_PROMPT = """你是一个命令行 coding agent，工作目录就是当前
 
 一步一步来，每一步都要可验证。
 
+需要翻阅多个文件才能回答的子问题，优先用 delegate 派给子 agent，而不是自己逐个读——
+你读过的文件会一直占据上下文，子 agent 的不会。
+
 你在无人值守地运行：不要向用户提问，不要等待确认，自己做判断并把任务做完。
 
 任务完成后，用一句话说明你做了什么、怎么确认它是对的。"""
@@ -343,15 +397,21 @@ def always_approve(name, arguments_json):
     return True
 
 
-def run_agent(task, max_steps=10, verbose=True, approve=None, repo_map=False):
+def run_agent(task, max_steps=10, verbose=True, approve=None, repo_map=False, allowed_tools=None):
     """跑一个任务。返回答案、用量，以及完整的调用轨迹。"""
     approve = approve or interactive_approve
+    if allowed_tools is None:
+        allowed_tools = MAIN_TOOLS
+    tools = TOOLS if allowed_tools is None else [
+        t for t in TOOLS if t["function"]["name"] in allowed_tools]
     user_content = task
     if repo_map:
         mapping = build_repo_map(task)
         if mapping:
             user_content = f"{mapping}\n\n（以上是自动生成的参考，不保证完整。）\n\n任务：{task}"
-
+    if _depth == 0:
+        for key in _sub_usage:
+            _sub_usage[key] = 0
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
@@ -368,11 +428,16 @@ def run_agent(task, max_steps=10, verbose=True, approve=None, repo_map=False):
             "trace": trace,
             "messages": messages,
             "per_call": per_call,
+            "sub_calls": _sub_usage["calls"],
+            "sub_steps": _sub_usage["steps"],
+            "sub_prompt": _sub_usage["prompt"],
+            "sub_completion": _sub_usage["completion"],
+            "sub_cached": _sub_usage["cached"],
             **totals,
         }
 
     for step in range(1, max_steps + 1):
-        message, usage = call_model(messages, TOOLS)
+        message, usage = call_model(messages, tools)
         messages.append(message)
 
         totals["steps"] = step
@@ -400,7 +465,9 @@ def run_agent(task, max_steps=10, verbose=True, approve=None, repo_map=False):
             if verbose:
                 print(f"[{step}] → {name}({arguments[:160]})")
 
-            if not approve(name, arguments):
+            if allowed_tools is not None and name not in allowed_tools:
+                tool_result = f"错误：子 agent 没有调用 {name} 的权限。"
+            elif not approve(name, arguments):
                 tool_result = "用户拒绝了这次操作。"
             else:
                 tool_result = run_tool(name, arguments)
