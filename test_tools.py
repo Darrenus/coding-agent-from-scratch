@@ -168,5 +168,36 @@ class EditFileTests(unittest.TestCase):
     def test_path_guard_still_applies(self):
         self.assertTrue(self.edit("root", "hacked", path="../../.zshrc").startswith("错误"))
 
+class BashTests(unittest.TestCase):
+    def run_bash(self, command):
+        return run_tool("bash", json.dumps({"command": command}))
+
+    def test_basic_command(self):
+        self.assertIn("hello", self.run_bash("echo hello"))
+
+    def test_exit_code_is_reported(self):
+        self.assertIn("[退出码 3]", self.run_bash("exit 3"))
+
+    def test_stderr_is_captured(self):
+        self.assertIn("boom", self.run_bash("echo boom >&2"))
+
+    def test_runs_in_the_workspace(self):
+        self.assertIn("cart.py", self.run_bash("ls"))
+
+    def test_write_outside_workspace_is_blocked(self):
+        self.assertFalse(os.path.exists(os.path.expanduser("~/bash_escape_probe.txt")))
+
+    def test_interactive_command_does_not_hang(self):
+        # stdin 接 /dev/null，所以读输入的命令立刻 EOF 而不是等 60 秒超时
+        import time
+        t = time.time()
+        self.run_bash("cat")
+        self.assertLess(time.time() - t, 10)
+
+    def test_long_output_is_truncated(self):
+        out = self.run_bash("python3 -c \"print('x' * 50000)\"")
+        self.assertIn("省略", out)
+        self.assertLess(len(out), 12000)
+
 if __name__ == "__main__":
     unittest.main()

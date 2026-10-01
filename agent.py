@@ -2,9 +2,9 @@
 import json
 import os
 import re
-
 import requests
-
+import sandbox
+import subprocess
 import editor
 
 API_URL = "https://api.deepseek.com/v1/chat/completions"
@@ -14,6 +14,9 @@ KEY_PATH = os.path.expanduser("~/.config/agent-from-scratch/env")
 MAX_HITS = 200
 MAX_READ_LINES = 400
 RANGE_READS = True
+BASH_TIMEOUT = 60
+MAX_BASH_OUTPUT = 8000
+REQUIRE_SANDBOX = True       # 沙箱不可用时拒绝执行，而不是降级放行
 
 WORKSPACE = os.path.realpath(os.environ.get("AGENT_WORKSPACE", "."))
 assert os.path.isabs(WORKSPACE) and WORKSPACE != os.sep, f"WORKSPACE 不合法: {WORKSPACE!r}"
@@ -202,6 +205,47 @@ def edit_file(path, old_str, new_str):
 
     return f"已修改 {path}：{note}"
 
+@tool(
+    name="bash",
+    description=(
+        "在工作目录下执行 shell 命令，返回输出和退出码。"
+        "命令运行在沙箱里：只能写工作目录，不能联网。"
+        "改完代码一定要用它跑测试验证，不要只凭阅读就下结论。"
+    ),
+    properties={"command": {"type": "string", "description": "要执行的 shell 命令"}},
+    required=["command"],
+)
+def bash(command):
+    """在沙箱里执行命令。沙箱不可用时拒绝执行。"""
+    argv = sandbox.wrap(command, WORKSPACE)
+    if argv is None:
+        if REQUIRE_SANDBOX:
+            return ("错误：当前平台没有可用的沙箱，已拒绝执行命令。"
+                    "（可以把 REQUIRE_SANDBOX 设为 False 放行，但命令将不受任何约束。）")
+        argv = ["/bin/bash", "-c", command]
+
+    try:
+        proc = subprocess.run(
+            argv, cwd=WORKSPACE, capture_output=True, text=True,
+            timeout=BASH_TIMEOUT, stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired:
+        return f"错误：命令超过 {BASH_TIMEOUT} 秒仍未结束，已终止。"
+
+    parts = []
+    if proc.stdout:
+        parts.append(proc.stdout)
+    if proc.stderr:
+        parts.append("[stderr]\n" + proc.stderr)
+    out = "\n".join(parts).strip() or "(无输出)"
+
+    if len(out) > MAX_BASH_OUTPUT:
+        half = MAX_BASH_OUTPUT // 2
+        out = (out[:half]
+               + f"\n…（输出过长，中间省略 {len(out) - MAX_BASH_OUTPUT} 字符）…\n"
+               + out[-half:])
+
+    return f"{out}\n[退出码 {proc.returncode}]"
 
 def run_tool(name, arguments_json):
     """执行一次工具调用。永远返回字符串，永远不抛异常。"""
@@ -258,7 +302,7 @@ SYSTEM_PROMPT = """你是一个命令行 coding agent，工作目录就是当前
 
 任务完成后，用一句话说明你做了什么、怎么确认它是对的。"""
 
-WRITE_TOOLS = {"edit_file"}
+WRITE_TOOLS = {"edit_file","bash"}
 
 def build_repo_map(task, max_files=12):
     """为这个任务生成一张仓库地图。失败时返回空串，不影响主流程。"""
@@ -276,13 +320,23 @@ def build_repo_map(task, max_files=12):
         return f"（仓库地图生成失败：{type(exc).__name__}: {exc}）"
 
 def interactive_approve(name, arguments_json):
-    """写操作需人工确认；只读工具直接放行，避免审批疲劳。"""
+    """写操作需人工确认；只读工具直接放行，避免审批疲劳。
+
+    从 /dev/tty 读而不是 stdin——stdin 经常被重定向（heredoc、管道、文件），
+    那时 input() 会直接拿到 EOF。拿不到终端就一律拒绝。
+    """
     if name not in WRITE_TOOLS:
         return True
     print(f"\n  ⚠ 准备执行 {name}")
     print(f"    {arguments_json[:500]}")
-    return input("    允许吗？[y/N] ").strip().lower() in ("y", "yes")
-
+    try:
+        with open("/dev/tty") as tty:
+            print("    允许吗？[y/N] ", end="", flush=True)
+            answer = tty.readline()
+    except OSError:
+        print("    拿不到终端，无法确认 → 拒绝。")
+        return False
+    return answer.strip().lower() in ("y", "yes")
 
 def always_approve(name, arguments_json):
     """批量实验用：不问，直接放行。"""
