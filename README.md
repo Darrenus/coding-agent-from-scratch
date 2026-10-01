@@ -1,13 +1,15 @@
 # coding-agent-from-scratch
 
+**中文** · [English](README.en.md)
+
 从零手写一个命令行 coding agent，不用任何 agent 框架。每一行都是自己敲的，每一个
 设计决定都要能说出理由。
 
-核心代码约 1,300 行、实验与评测约 800 行，七个工具（`read_file` / `list_files` / `grep` / `edit_file` / `bash`），
-46 个测试。
+核心代码约 1,300 行、实验与评测约 800 行，七个工具（`read_file` / `list_files` /
+`grep` / `edit_file` / `bash` / `delegate` / `run_tests`），52 个测试。
 
-> **进行中。** 已完成模块 0–9。下面写的每个数字都来自本仓库里的 `results-*.json`
-> 和 `edits-*.json`，可以自己重跑核对。没有测过的东西不会写成结论。
+> 模块 0–9 已完成。下面写的每个数字都来自 `results/` 里的原始数据，可以自己重跑
+> 核对。**没有测过的东西不会写成结论**——包括三个「做了但结论是负面」的模块。
 
 ## 跑起来
 
