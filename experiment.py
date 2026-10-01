@@ -1,11 +1,14 @@
 """对照实验：工具描述会不会改变模型的工具选择？"""
 import json
+import os
 import random
 import statistics
 import sys
 from datetime import datetime
 
 import agent
+
+RESULTS_DIR = "results"
 
 TASK = "在这个项目里，哪些地方用到了 requests 这个库？列出文件和行号。"
 
@@ -50,7 +53,8 @@ def main(n):
 
     # 先存原始数据，再算汇总。汇总是单行道，原始数据能被反复追问。
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = f"results-{stamp}.json"
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    path = os.path.join(RESULTS_DIR, f"results-{stamp}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     print(f"原始数据已存: {path}\n")

@@ -6,11 +6,14 @@
 """
 import collections
 import json
+import os
 import sys
 from datetime import datetime
 import agent
 
 from editor import STRATEGY_NAMES as STRATEGIES
+
+RESULTS_DIR = "results"
 
 TASK_TEMPLATES = [
     "{f} 里的税率要从 5% 改成 8%。",
@@ -66,7 +69,8 @@ def main(repeats, target):
     print("\n")
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    path = f"edits-{target.replace('.py', '')}-{stamp}.json"
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    path = os.path.join(RESULTS_DIR, f"edits-{target.replace('.py', '')}-{stamp}.json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"target": target, "records": records, "edits": all_edits},
                   f, ensure_ascii=False, indent=2)
