@@ -6,6 +6,7 @@ import requests
 import sandbox
 import subprocess
 import editor
+import sys
 
 API_URL = "https://api.deepseek.com/v1/chat/completions"
 MODEL = "deepseek-v4-flash"
@@ -22,6 +23,7 @@ REQUIRE_SANDBOX = True       # 沙箱不可用时拒绝执行，而不是降级�
 READ_ONLY_TOOLS = {"read_file", "list_files", "grep"}
 SUB_AGENT_STEPS = 8
 MAX_DELEGATE_DEPTH = 1
+HIDDEN_TESTS = None      # 工作区之外的测试目录；None 表示没有隐藏测试
 
 _depth = 0
 _sub_usage = {"calls": 0, "steps": 0, "prompt": 0, "cached": 0, "completion": 0}
@@ -235,7 +237,8 @@ def edit_file(path, old_str, new_str):
 )
 def bash(command):
     """在沙箱里执行命令。沙箱不可用时拒绝执行。"""
-    argv = sandbox.wrap(command, WORKSPACE)
+    argv = sandbox.wrap(command, WORKSPACE,
+        deny_read=[HIDDEN_TESTS] if HIDDEN_TESTS else [])
     if argv is None:
         if REQUIRE_SANDBOX:
             return ("错误：当前平台没有可用的沙箱，已拒绝执行命令。"
@@ -297,6 +300,38 @@ def delegate(question):
 
     answer = out["answer"] or "(子 agent 没有给出结论)"
     return f"{answer}\n\n[子 agent 用了 {out['steps']} 步、{out['prompt']:,} 输入 token]"
+
+@tool(
+    name="run_tests",
+    description=(
+        "运行隐藏的测试套件，返回每条测试通过还是失败、以及失败时的断言信息。"
+        "你看不到测试源码——只能从失败信息反推代码应该满足什么行为。"
+    ),
+    properties={},
+    required=[],
+)
+def run_tests():
+    """在沙箱外运行工作区之外的测试，只回传结果摘要，不回传源码。"""
+    if not HIDDEN_TESTS:
+        return "错误：当前没有配置隐藏测试套件。"
+
+    env = dict(os.environ, PYTHONPATH=WORKSPACE)
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "unittest", "discover",
+             "-s", HIDDEN_TESTS, "-t", HIDDEN_TESTS, "-v"],
+            cwd=WORKSPACE, env=env, capture_output=True, text=True,
+            timeout=120, stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired:
+        return "错误：测试超过 120 秒未结束。"
+
+    keep_prefix = ("AssertionError", "FAIL:", "ERROR:", "Ran ", "OK", "FAILED")
+    kept = [
+        line for line in (proc.stdout + proc.stderr).splitlines()
+        if re.match(r"^test_\w+ .*\.\.\. ", line) or line.startswith(keep_prefix)
+    ]
+    return "\n".join(kept) or "(没有输出)"
 
 def run_tool(name, arguments_json):
     """执行一次工具调用。永远返回字符串，永远不抛异常。"""

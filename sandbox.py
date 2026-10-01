@@ -36,16 +36,20 @@ def _sbpl_string(path: str) -> str:
     return f'"{path}"'
 
 
-def profile(workspace: str, allow_network: bool = False) -> str:
+def profile(workspace: str, allow_network: bool = False, deny_read=()) -> str:
+    denied = "\n".join(
+        f"(deny file-read* (subpath {_sbpl_string(os.path.realpath(p))}))"
+        for p in deny_read
+    )
     return PROFILE_TEMPLATE.format(
         workspace=_sbpl_string(os.path.realpath(workspace)),
         network="" if allow_network else "(deny network*)",
-    )
+    ) + ("\n" + denied if denied else "")
 
 
-def wrap(command: str, workspace: str, allow_network: bool = False):
+def wrap(command: str, workspace: str, allow_network: bool = False, deny_read=()):
     """返回一个 argv；执行它等价于在沙箱里跑 command。沙箱不可用时返回 None。"""
     if not available():
         return None
-    return ["sandbox-exec", "-p", profile(workspace, allow_network),
+    return ["sandbox-exec", "-p", profile(workspace, allow_network, deny_read),
             "/bin/bash", "-c", command]

@@ -29,6 +29,7 @@ class Task(NamedTuple):
     fixture: str = ""      # fixtures/ 下的子目录名；空表示只读任务
     verify: str = ""       # 跑完后用来独立复验的命令，空表示不复验
     require_all: bool = False
+    hidden_tests: str = ""      # fixtures/ 下的测试目录名；非空则启用隐藏测试
 
 TASKS = [
     Task("docker-image",
@@ -49,6 +50,19 @@ REPAIR_TASKS = [
          ("", ),                       # 正确性靠 verify 判定，不看文本
          fixture="shop",
          verify="python3 -m unittest test_shop"),
+    Task("fix-shop-hard",
+         "test_shop.py 有多条测试失败。逐个修复 shop.py 里的 bug，每修一个就跑 "
+         "python3 -m unittest test_shop 确认进展，直到全部通过。不要修改测试文件。",
+         ("", ),
+         fixture="shop-hard",
+         verify="python3 -m unittest test_shop"),
+    Task("fix-shop-hidden",
+         "shop.py 有 bug。用 run_tests 运行测试套件，根据失败信息修复 shop.py，"
+         "直到全部通过。你看不到测试源码，只能从断言信息反推应有的行为。",
+         ("", ),
+         fixture="shop-hidden",
+         hidden_tests="shop-hidden-tests",
+         verify="python3 -m unittest discover -s ../shop-hidden-tests -t ../shop-hidden-tests"),
 ]
 
 BREADTH_TASKS = [
@@ -106,13 +120,16 @@ def run_once(task, config, root, max_steps):
     old = _apply(config)
     workspace = _prepare_workspace(task, root)
     agent.WORKSPACE = os.path.realpath(workspace)
+    old_hidden = agent.HIDDEN_TESTS
+    agent.HIDDEN_TESTS = (os.path.join(FIXTURES, task.hidden_tests)
+        if task.hidden_tests else None)
     started = time.time()
     try:
         out = agent.run_agent(task.prompt, max_steps=max_steps, verbose=False,
                               approve=agent.always_approve, repo_map=True)
     finally:
         _apply(old)
-
+        agent.HIDDEN_TESTS = old_hidden
     verified = _verify(task, workspace)
     answer = out["answer"] or ""
     if verified is not None:

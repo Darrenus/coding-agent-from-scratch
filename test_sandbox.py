@@ -86,3 +86,39 @@ class ProfileTests(unittest.TestCase):
     def test_network_rule_is_togglable(self):
         self.assertIn("(deny network*)", sandbox.profile("/tmp"))
         self.assertNotIn("(deny network*)", sandbox.profile("/tmp", allow_network=True))
+
+@unittest.skipUnless(sandbox.available(), "当前平台没有 sandbox-exec")
+class DenyReadTests(unittest.TestCase):
+    """定点禁读：隐藏测试文件要让 agent 读不到，但系统库仍要能读。"""
+
+    def setUp(self):
+        self.ws = tempfile.TemporaryDirectory()
+        self.secret = tempfile.TemporaryDirectory()
+        with open(os.path.join(self.secret.name, "s.txt"), "w", encoding="utf-8") as f:
+            f.write("TOPSECRET")
+
+    def tearDown(self):
+        self.ws.cleanup()
+        self.secret.cleanup()
+
+    def cat_secret(self, deny):
+        path = shlex.quote(os.path.join(os.path.realpath(self.secret.name), "s.txt"))
+        argv = sandbox.wrap(f"cat {path}", self.ws.name, deny_read=deny)
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=20)
+        return proc.stdout + proc.stderr
+
+    def test_denied_path_is_unreadable(self):
+        out = self.cat_secret([self.secret.name])
+        self.assertIn("not permitted", out.lower())
+        self.assertNotIn("TOPSECRET", out)
+
+    def test_without_the_rule_the_same_path_is_readable(self):
+        # 对照组：没有这条规则时必须读得到，否则上一条测试没有鉴别力
+        self.assertIn("TOPSECRET", self.cat_secret([]))
+
+    def test_other_outside_paths_stay_readable(self):
+        # 禁读必须定点——python 还要加载系统库
+        argv = sandbox.wrap("head -1 /etc/hosts", self.ws.name,
+                            deny_read=[self.secret.name])
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=20)
+        self.assertEqual(0, proc.returncode)
