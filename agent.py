@@ -12,6 +12,8 @@ MODEL = "deepseek-v4-flash"
 KEY_PATH = os.path.expanduser("~/.config/agent-from-scratch/env")
 
 MAX_HITS = 200
+MAX_READ_LINES = 400
+RANGE_READS = True
 
 WORKSPACE = os.path.realpath(os.environ.get("AGENT_WORKSPACE", "."))
 assert os.path.isabs(WORKSPACE) and WORKSPACE != os.sep, f"WORKSPACE 不合法: {WORKSPACE!r}"
@@ -65,15 +67,46 @@ def tool(name, description, properties, required):
 
 @tool(
     name="read_file",
-    description="读取一个文件的完整内容，返回带行号的文本。",
-    properties={"path": {"type": "string", "description": "相对于当前工作目录的文件路径"}},
+    description=(
+        "读取文件内容，返回带行号的文本。"
+        "可以只读某个行区间（start/end，1-based，含两端）。"
+        "大文件请优先用区间——整文件读取会占满上下文，而且每一轮都要重发。"
+        "grep 的结果里带行号，可以直接拿来定位区间。"
+    ),
+    properties={
+        "path": {"type": "string", "description": "文件路径"},
+        "start": {"type": "integer", "description": "起始行号（1-based），省略表示从第一行"},
+        "end": {"type": "integer", "description": "结束行号（含），省略表示到最后一行"},
+    },
     required=["path"],
 )
-def read_file(path):
-    """读文件，返回带行号的内容。"""
+def read_file(path, start=None, end=None):
+    """读文件，返回带行号的内容。可选行区间。"""
+    if not RANGE_READS:
+        start = end = None
     with open(safe_path(path), encoding="utf-8") as f:
         lines = f.read().splitlines()
-    return "\n".join(f"{i:6d}\t{line}" for i, line in enumerate(lines, 1))
+
+    total = len(lines)
+    if total == 0:
+        return f"（{path} 是空文件）"
+
+    first = max(1, start or 1)
+    if first > total:
+        return f"错误：{path} 共 {total} 行，start={start} 超出范围。"
+    last = min(total, end or total)
+
+    note = ""
+    if last - first + 1 > MAX_READ_LINES:
+        last = first + MAX_READ_LINES - 1
+        note = (f"\n（已截断到 {MAX_READ_LINES} 行。文件共 {total} 行，"
+                f"用 start={last + 1} 继续读。）")
+
+    body = "\n".join(f"{i:6d}\t{lines[i - 1]}" for i in range(first, last + 1))
+    header = ""
+    if first > 1 or last < total:
+        header = f"（{path} 第 {first}–{last} 行，共 {total} 行）\n"
+    return header + body + note
 
 
 @tool(
@@ -271,6 +304,7 @@ def run_agent(task, max_steps=10, verbose=True, approve=None, repo_map=False):
     ]
     totals = {"steps": 0, "prompt": 0, "completion": 0, "cached": 0}
     trace = []
+    per_call = []
 
     def result(answer, exit_reason):
         return {
@@ -278,6 +312,8 @@ def run_agent(task, max_steps=10, verbose=True, approve=None, repo_map=False):
             "exit_reason": exit_reason,
             "tools": [t["tool"] for t in trace],
             "trace": trace,
+            "messages": messages,
+            "per_call": per_call,
             **totals,
         }
 
@@ -289,6 +325,13 @@ def run_agent(task, max_steps=10, verbose=True, approve=None, repo_map=False):
         totals["prompt"] += usage.get("prompt_tokens", 0)
         totals["completion"] += usage.get("completion_tokens", 0)
         totals["cached"] += usage.get("prompt_cache_hit_tokens", 0)
+
+        per_call.append({
+            "step": step,
+            "prompt": usage.get("prompt_tokens", 0),
+            "cached": usage.get("prompt_cache_hit_tokens", 0),
+            "completion": usage.get("completion_tokens", 0),
+        })
 
         if verbose and message.get("content"):
             print(f"[{step}] {message['content']}")

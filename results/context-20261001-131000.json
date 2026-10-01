@@ -1,0 +1,361 @@
+{
+  "True": [
+    {
+      "task": "swebench 批量运行时 docker 镜像名是怎么拼出来的？给出具体函数名。",
+      "correct": true,
+      "steps": 5,
+      "prompt": 17527,
+      "cached": 12800,
+      "completion": 1515,
+      "chars": 20386,
+      "tools": [
+        "grep",
+        "grep",
+        "read_file",
+        "read_file",
+        "read_file",
+        "grep",
+        "read_file"
+      ],
+      "answer": "## 结论\n\n批量运行 SWE-bench 时，镜像名由 `src/minisweagent/run/benchmarks/swebench.py` 里的 **`get_swebench_docker_image_name(instance)`**（第 68–76 行）拼出来，调用它的是 **`get_sb_environment(config, instance)`**（第 79–94 行，第 82 行调用）。\n\n拼接规则（`swebench.py:68-76`）：\n\n```python\nimage_name = instance.get(\"image_name\", None) or instance.get(\"docker_image\", None)\nif image_name is None:\n    iid = instance[\"instance_id\"]\n    id_docker_compatible = iid.replace(\"__\", \"_1776_\")       # docker 不允许双下划线\n    image_name = f\"docker.io/swebench/sweb.eval.x86_64.{id_docker_compatible}:latest\".lower()\nreturn image_name\n```\n\n即：\n1. 数据集里自带 `image_name` / `docker_image` 就直接用（注意用的是 `or`，所以显式 `None` 也会走构造分支）；\n2. 否则取 `instance[\"instance_id\"]`，把所有 `__` 替换成 magic token `_1776_`，套模板 `docker.io/swebench/sweb.eval.x86_64.<id>:latest`，最后整体 `.lower()`。\n3. `get_sb_environment` 再把它写进 `env_config[\"image\"]`：`docker` / `swerex_modal` 直接用原串，`singularity` / `contree` 前面加 `docker://`；之后交给 `get_environment(env_config)`，最终由 `DockerEnvironment` / `SwerexDockerEnvironment` 消费。\n\n例：`swe-agent__test-repo__1` → `docker.io/swebench/sweb.eval.x86_64.swe-agent_1776_test-repo_1776_1:latest`。\n\n**验证方式**：该行为已有对应单元测试 `tests/run/test_swebench.py::test_get_image_name_with_existing_image_name / _without_image_name / _with_none_image_name / _with_complex_instance_id`（第 80–104 行），其期望值与上面的公式逐字一致（含 `_1776_` 替换、`x86_64` 前缀、`:latest` 与 `.lower()`）；仓库根目录的 `verify_imgname.py` 也把同样的 4 组输入/输出做成断言脚本。我没有改动任何源码，因此这些既有断言即为正确性依据。\n\n（环境里没有 shell 执行工具，所以我是靠逐行读源码 + 对齐既有测试断言来核对的；若需要真正跑一遍，可用 `python verify_imgname.py` 或 `pytest tests/run/test_swebench.py -k get_image_name`。）"
+    },
+    {
+      "task": "DefaultAgent 超过 step limit 之后会抛出什么异常？给出异常类名。",
+      "correct": true,
+      "steps": 6,
+      "prompt": 17992,
+      "cached": 14976,
+      "completion": 847,
+      "chars": 13096,
+      "tools": [
+        "grep",
+        "read_file",
+        "grep",
+        "read_file",
+        "read_file",
+        "grep",
+        "read_file"
+      ],
+      "answer": "**答案：`LimitsExceeded`**（定义在 `src/minisweagent/exceptions.py:13`，继承 `InterruptAgentFlow`）。\n\n依据：`src/minisweagent/agents/default.py:132-139` 中 `query()` 检查 `0 < step_limit <= self.n_calls` 时 `raise LimitsExceeded({...})`，并附 `extra.exit_status = \"LimitsExceeded\"`；`run()` 在 `except InterruptAgentFlow` 里捕获后落成 exit 消息，所以 `run()` 返回的 `info[\"exit_status\"] == \"LimitsExceeded\"`（tests/agents/test_default.py:169 与 verify_step_limit.py 均如此断言）。注意墙钟超时走的是其子类 `TimeExceeded`，不是 step limit。\n\n（说明：本次会话没有 shell 工具，无法实际执行 `verify_step_limit.py`，故以源码路径和已有测试断言交叉确认。）"
+    },
+    {
+      "task": "LitellmModel 是怎么统计 API 花费的？给出相关函数名或全局对象名。",
+      "correct": true,
+      "steps": 4,
+      "prompt": 22165,
+      "cached": 14976,
+      "completion": 1338,
+      "chars": 31524,
+      "tools": [
+        "read_file",
+        "read_file",
+        "grep",
+        "read_file"
+      ],
+      "answer": "## LitellmModel 的花费统计\n\n**核心链路（`src/minisweagent/models/litellm_model.py`）：**\n\n1. **`LitellmModel._calculate_cost(self, response)`**（L108-126）\n   - 调用 `litellm.cost_calculator.completion_cost(response, model=self.config.model_name)` 得到本次调用的花费；\n   - 若 cost ≤ 0 或抛异常：cost 记为 `0.0`，并且除非 `config.cost_tracking == \"ignore_errors\"`，会 `logger.critical(...)` 并抛 `RuntimeError`；\n   - 返回 `{\"cost\": cost}`。`cost_tracking` 来自 `LitellmModelConfig.cost_tracking`（可用 `MSWEA_COST_TRACKING` 环境变量覆盖），注册表 `litellm_model_registry` 在 `__init__` 里通过 `litellm.utils.register_model(...)` 注册模型元数据以支持计费。\n\n2. **`LitellmModel.query(...)`**（L81-106）——真正的统计入口：\n   - `cost_output = self._calculate_cost(response)`\n   - `GLOBAL_MODEL_STATS.add(cost_output[\"cost\"])` ← 累加到全局对象\n   - 把 `**cost_output` 写进返回 message 的 `extra`（即 `extra[\"cost\"]`）；若 `_parse_actions` 抛 `FormatError`，先把 cost 写进 `e.messages[0][\"extra\"]` 再抛出，保证\"被计费的调用不会丢失花费\"。\n\n**全局对象（`src/minisweagent/models/__init__.py`）：**\n- **`GLOBAL_MODEL_STATS`**（L42）= `GlobalModelStats()` 单例，进程级统计：\n  - `add(cost)`（L25-31）：加锁累加 `self._cost`、`self._n_calls`，并按 `MSWEA_GLOBAL_COST_LIMIT` / `MSWEA_GLOBAL_CALL_LIMIT` 检查限额，超限抛 `RuntimeError`；\n  - 属性 `cost`、`n_calls`。\n  - 使用处包括 `run/benchmarks/utils/batch_progress.py` 显示总花费。\n\n**每个实例的花费（`src/minisweagent/agents/default.py`）：**\n- `Agent.query()`（L150）：`self.cost += message.get(\"extra\", {}).get(\"cost\", 0.0)`；\n- `Agent.run()` 的 `FormatError` 分支（L102）：`self.cost += e.messages[0].get(\"extra\", {}).get(\"cost\", 0.0)`；\n- `self.cost`/`self.n_calls` 在 `serialize()` 中被写成 `model_stats.instance_cost` / `api_calls`，`cost_limit`/`step_limit` 用于停止条件（L132）。\n\n一句话：**`LitellmModel._calculate_cost` 用 `litellm.cost_calculator.completion_cost` 算单次花费 → `query()` 把它累加进全局单例 `GLOBAL_MODEL_STATS`（`add`/`cost`/`n_calls`）并写入消息 `extra[\"cost\"]` → `Agent` 再累加到 `self.cost`；已通过阅读 `litellm_model.py`、`models/__init__.py` 与 `agents/default.py` 的对应代码及测试中的 `GLOBAL_MODEL_STATS.cost` 断言确认。**"
+    },
+    {
+      "task": "swebench 批量运行时 docker 镜像名是怎么拼出来的？给出具体函数名。",
+      "correct": true,
+      "steps": 10,
+      "prompt": 59835,
+      "cached": 51328,
+      "completion": 3117,
+      "chars": 36591,
+      "tools": [
+        "grep",
+        "list_files",
+        "grep",
+        "read_file",
+        "read_file",
+        "read_file",
+        "read_file",
+        "edit_file",
+        "grep",
+        "grep",
+        "grep",
+        "read_file",
+        "read_file",
+        "read_file",
+        "grep",
+        "edit_file",
+        "read_file"
+      ],
+      "answer": "**函数名：`get_swebench_docker_image_name`**（定义在 `src/minisweagent/run/benchmarks/swebench.py:68`）。\n\n拼接逻辑（swebench.py:70-76）：\n\n1. 先取 `instance[\"image_name\"]`，其次 `instance[\"docker_image\"]` —— 数据集自带镜像名时直接用它；\n2. 两个都为空时，用 `instance_id` 拼：把 `__` 替换成 magic token `_1776_`（Docker 不允许双下划线），套模板\n   `f\"docker.io/swebench/sweb.eval.x86_64.{id_docker_compatible}:latest\"`，最后整体 `.lower()`。\n\n调用链：批量入口 `main` → `process_instance`（swebench.py:146）和单实例入口 `swebench_single.main`（swebench_single.py:89）都调用 `get_sb_environment`（swebench.py:79），后者在第 82 行调用该函数，把结果写进 `env_config[\"image\"]`（`docker`/`swerex_modal` 直接用，`singularity`/`contree` 加 `docker://` 前缀）。\n\n确认方式：读了 `swebench.py:68-94` 的实现并在全仓库 grep（`get_swebench_docker_image_name` 只在 `swebench.py` 定义、`tests/run/test_swebench.py:80-104` 有 4 个断言固定其行为的用例），同时确认这是唯一构造 `sweb.eval` 镜像名的地方（programbench 那条 `image_name` 是另一套 benchmark）。"
+    },
+    {
+      "task": "DefaultAgent 超过 step limit 之后会抛出什么异常？给出异常类名。",
+      "correct": true,
+      "steps": 4,
+      "prompt": 9604,
+      "cached": 7808,
+      "completion": 457,
+      "chars": 8639,
+      "tools": [
+        "grep",
+        "read_file",
+        "read_file",
+        "grep"
+      ],
+      "answer": "**`LimitsExceeded`**（定义于 `src/minisweagent/exceptions.py:13`，继承 `InterruptAgentFlow`）。\n\n依据：`src/minisweagent/agents/default.py:132-139` 的 `query()` 中，当 `0 < step_limit <= n_calls`（或超 cost limit）时 `raise LimitsExceeded({...})`，消息的 `extra.exit_status` 为 `\"LimitsExceeded\"`；测试 `tests/agents/test_default.py` 也断言该 exit_status。注意 `TimeExceeded` 是它的子类，仅在超出 wall-clock 时间限制时抛出。"
+    },
+    {
+      "task": "LitellmModel 是怎么统计 API 花费的？给出相关函数名或全局对象名。",
+      "correct": true,
+      "steps": 3,
+      "prompt": 20888,
+      "cached": 10112,
+      "completion": 1106,
+      "chars": 45041,
+      "tools": [
+        "grep",
+        "read_file",
+        "read_file",
+        "grep"
+      ],
+      "answer": "## LitellmModel 的花费统计机制\n\n**1. 计算单次调用花费 —— `LitellmModel._calculate_cost(response)`**（`src/minisweagent/models/litellm_model.py:108`）\n- 调用 litellm 自带的成本计算器：`litellm.cost_calculator.completion_cost(response, model=self.config.model_name)`\n- 结果必须 `> 0.0`，否则抛 `ValueError`，进入 `except`：`cost = 0.0`\n- 若 `config.cost_tracking != \"ignore_errors\"`（即默认 `\"default\"`，可由环境变量 `MSWEA_COST_TRACKING` 覆盖），则 `logger.critical(msg)` 并 `raise RuntimeError(...)`，提示可通过 `cost_tracking: 'ignore_errors'` 或 `MSWEA_COST_TRACKING='ignore_errors'` 忽略\n- 返回 `{\"cost\": cost}`\n\n**2. 计入全局统计 —— `GLOBAL_MODEL_STATS`**（`LitellmModel.query`，`litellm_model.py:85-86`）\n- `GLOBAL_MODEL_STATS.add(cost_output[\"cost\"])`；`GLOBAL_MODEL_STATS` 是 `src/minisweagent/models/__init__.py:42` 定义的全局单例，类型为 `GlobalModelStats`（`__init__.py:13`），内部用 `_cost`/`_n_calls` + `threading.Lock`，提供 `add()`、`cost`、`n_calls`，并依据 `MSWEA_GLOBAL_COST_LIMIT` / `MSWEA_GLOBAL_CALL_LIMIT` 抛 `RuntimeError`\n\n**3. 写回消息由上层累积**\n- `query()` 把 `**cost_output` 放进 `message[\"extra\"]`（`litellm_model.py:100-105`），`FormatError` 分支同样持久化到 `e.messages[0][\"extra\"]`（:91）\n- `Agent` 侧累加：`self.cost += message.get(\"extra\", {}).get(\"cost\", 0.0)`（`agents/default.py:150`，出错分支 :102），并在 `serialize()` 里输出 `\"model_cost\": self.cost` / `\"instance_cost\"` / `\"api_calls\"`\n\n**4. 模型注册（保证算得出成本）**：`LitellmModel.__init__` 中若 `config.litellm_model_registry` 是文件，则 `litellm.utils.register_model(json.loads(...))`（`litellm_model.py:61-62`），否则本地模型会因未注册而报 \"perhaps it's not registered?\"。\n\n**相关名字汇总**：`_calculate_cost`、`query`、`GLOBAL_MODEL_STATS`、`GlobalModelStats.add/.cost/.n_calls`、`cost_tracking` / `MSWEA_COST_TRACKING`、`litellm_model_registry`、`litellm.utils.register_model`、`litellm.cost_calculator.completion_cost`，以及 `message[\"extra\"][\"cost\"]` → `Agent.cost`。\n\n说明：我通过阅读 `litellm_model.py`、`models/__init__.py` 与 `grep` 全仓的 `cost`/`GLOBAL_MODEL_STATS` 引用（确认 Agent 与 benchmark 进度条都消费该值）确认了以上链路，未修改任何文件。"
+    },
+    {
+      "task": "swebench 批量运行时 docker 镜像名是怎么拼出来的？给出具体函数名。",
+      "correct": false,
+      "steps": 10,
+      "prompt": 51641,
+      "cached": 45824,
+      "completion": 1722,
+      "chars": 24622,
+      "tools": [
+        "grep",
+        "grep",
+        "read_file",
+        "read_file",
+        "read_file",
+        "grep",
+        "grep",
+        "read_file",
+        "read_file",
+        "read_file",
+        "grep",
+        "grep",
+        "read_file",
+        "edit_file",
+        "edit_file"
+      ],
+      "answer": ""
+    },
+    {
+      "task": "DefaultAgent 超过 step limit 之后会抛出什么异常？给出异常类名。",
+      "correct": true,
+      "steps": 8,
+      "prompt": 25432,
+      "cached": 21888,
+      "completion": 1132,
+      "chars": 14646,
+      "tools": [
+        "grep",
+        "read_file",
+        "read_file",
+        "grep",
+        "read_file",
+        "grep",
+        "grep",
+        "read_file",
+        "list_files"
+      ],
+      "answer": "**答案：`LimitsExceeded`**\n\n依据：\n\n- `src/minisweagent/agents/default.py:132-139` —— `DefaultAgent.query()` 中当 `0 < self.config.step_limit <= self.n_calls`（或 cost 超限）时抛出：\n\n```python\nraise LimitsExceeded({\n    \"role\": \"exit\",\n    \"content\": \"LimitsExceeded\",\n    \"extra\": {\"exit_status\": \"LimitsExceeded\", \"submission\": \"\"},\n})\n```\n\n- `src/minisweagent/exceptions.py:13` —— `class LimitsExceeded(InterruptAgentFlow)`，即继承自 `InterruptAgentFlow` 的异常，携带 exit 消息；`run()` 捕获后返回 `exit_status == \"LimitsExceeded\"`。\n- 注意区分：wall-clock 超时抛的是 `TimeExceeded`（`TimeExceeded` 是 `LimitsExceeded` 的子类，见 exceptions.py:17 和 default.py:140-145），而 step limit / cost limit 抛的都是 `LimitsExceeded`。\n- `tests/agents/test_default.py:154-170`（`test_step_limit_enforcement`，`step_limit=1`）断言 `info[\"exit_status\"] == \"LimitsExceeded\"`，与源码一致。\n\n验证方式：通读 `default.py` 的 `query()` 实现与 `exceptions.py` 的类层次，并与仓库内既有测试的断言交叉确认（环境中无 shell 工具，故未实际执行 pytest）。"
+    },
+    {
+      "task": "LitellmModel 是怎么统计 API 花费的？给出相关函数名或全局对象名。",
+      "correct": true,
+      "steps": 3,
+      "prompt": 16276,
+      "cached": 9088,
+      "completion": 1125,
+      "chars": 30570,
+      "tools": [
+        "grep",
+        "read_file",
+        "read_file"
+      ],
+      "answer": "**LitellmModel 的 API 花费统计机制**（`src/minisweagent/models/litellm_model.py`）：\n\n**相关函数 / 全局对象**\n\n1. `LitellmModel._calculate_cost(response)` — 单次调用的花费计算。\n   - 调用 litellm 的 `litellm.cost_calculator.completion_cost(response, model=self.config.model_name)` 得到美元花费；\n   - 若 `cost <= 0.0` 或计算抛异常，则行为由配置项 `LitellmModelConfig.cost_tracking`（`\"default\"` / `\"ignore_errors\"`，可用环境变量 `MSWEA_COST_TRACKING` 覆盖）决定：`default` 时 `logger.critical` 并抛 `RuntimeError`，`ignore_errors` 时静默记 0；\n   - 返回 `{\"cost\": cost}`。\n\n2. `LitellmModel.query(...)`（第 85–86 行）— 调用点。\n   - `cost_output = self._calculate_cost(response)`\n   - `GLOBAL_MODEL_STATS.add(cost_output[\"cost\"])` 把本次花费累加到全局统计；\n   - 花费同时写进返回消息的 `message[\"extra\"][\"cost\"]`（第 100–105 行），并在 `FormatError` 时通过 `e.messages[0][\"extra\"].update(cost_output)` 持久化（第 91 行）。\n\n3. 全局对象 `GLOBAL_MODEL_STATS`（`src/minisweagent/models/__init__.py:42`，类型 `GlobalModelStats`）— 进程级累加器。\n   - `add(cost)`：加锁累加 `_cost` / `_n_calls`，并对照 `cost_limit`（`MSWEA_GLOBAL_COST_LIMIT`）与 `call_limit`（`MSWEA_GLOBAL_CALL_LIMIT`）检查，超限抛 `RuntimeError`；\n   - 只读属性 `cost`（总花费，第 33–35 行）与 `n_calls`（调用次数，第 37–39 行）。\n\n4. 定价元数据来源：`LitellmModelConfig.litellm_model_registry`（环境变量 `LITELLM_MODEL_REGISTRY_PATH`），在 `__init__` 里通过 `litellm.utils.register_model(...)` 注册本地模型价格，供 `completion_cost` 查表。\n\n怎么确认：通过 `grep cost` 定位到全部花费相关代码，并直接阅读 `litellm_model.py:64-126` 与 `models/__init__.py:13-42`，确认 `_calculate_cost` → `GLOBAL_MODEL_STATS.add` → `GlobalModelStats._cost/.cost` 这条链路。"
+    }
+  ],
+  "False": [
+    {
+      "task": "swebench 批量运行时 docker 镜像名是怎么拼出来的？给出具体函数名。",
+      "correct": true,
+      "steps": 4,
+      "prompt": 24995,
+      "cached": 15488,
+      "completion": 869,
+      "chars": 41114,
+      "tools": [
+        "grep",
+        "grep",
+        "read_file",
+        "read_file",
+        "grep",
+        "read_file"
+      ],
+      "answer": "**函数名：`get_swebench_docker_image_name`**（`src/minisweagent/run/benchmarks/swebench.py:68`）。\n\n拼接逻辑：\n1. 优先用实例里已有的 `image_name` / `docker_image`（数据集提供的自定义镜像，原样返回）；\n2. 否则由 `instance_id` 推导：`docker.io/swebench/sweb.eval.x86_64.{id}:latest`，其中 `__` 被替换成魔法 token `_1776_`（因为 docker 镜像名不允许双下划线，见代码注释），最后整体 `.lower()`。\n\n调用链：`main` → `process_instance`（`swebench.py:146`）→ `get_sb_environment`（`swebench.py:82`）取到镜像名后写入 `env_config[\"image\"]`（singularity/contree 会加 `docker://` 前缀）再交给 `get_environment`；批量路径唯一入口就是这个函数，`swebench_single.py` 里没有镜像拼接逻辑。\n\n确认方式：读代码 + 仓库自带的 `verify_imgname.py` 与 `tests/run/test_swebench.py:80-104` 的 4 个用例（含 `swe-agent__test-repo__1` → `...swe-agent_1776_test-repo_1776_1:latest`）逐条对照，逻辑与预期输出一致（本次未修改任何文件）。"
+    },
+    {
+      "task": "DefaultAgent 超过 step limit 之后会抛出什么异常？给出异常类名。",
+      "correct": true,
+      "steps": 6,
+      "prompt": 18806,
+      "cached": 14208,
+      "completion": 903,
+      "chars": 20019,
+      "tools": [
+        "grep",
+        "read_file",
+        "grep",
+        "grep",
+        "list_files",
+        "grep",
+        "read_file",
+        "read_file"
+      ],
+      "answer": "**异常类名：`LimitsExceeded`**（`minisweagent.exceptions.LimitsExceeded`，继承自 `InterruptAgentFlow`）。\n\n依据：\n- `src/minisweagent/agents/default.py:130-139`：`query()` 中当 `0 < step_limit <= self.n_calls`（或 `cost_limit` 命中）时 `raise LimitsExceeded({... \"exit_status\": \"LimitsExceeded\" ...})`；`run()` 的 `except InterruptAgentFlow` 会把它转成 `role=\"exit\"` 消息，最终 `run()` 返回 `exit_status == \"LimitsExceeded\"`。\n- `src/minisweagent/exceptions.py:13` 定义该类；特殊的墙上时钟限制则抛其子类 `TimeExceeded`（`default.py:140`）。\n- 仓库自带的 `verify_step_limit.py`（step_limit=1，第二次 `query()` 断言 `LimitsExceeded`）与此实现一致。\n\n注：我没有执行脚本的权限，故通过源码逐行核对确认（raise 点、异常类定义、以及 `run()` 的 `exit_status` 断言测试 `tests/agents/test_default.py` 中同样期望 `\"LimitsExceeded\"`）。"
+    },
+    {
+      "task": "LitellmModel 是怎么统计 API 花费的？给出相关函数名或全局对象名。",
+      "correct": true,
+      "steps": 3,
+      "prompt": 13076,
+      "cached": 11136,
+      "completion": 747,
+      "chars": 24321,
+      "tools": [
+        "read_file",
+        "read_file",
+        "grep"
+      ],
+      "answer": "## LitellmModel 的花费统计机制\n\n**核心函数：`LitellmModel._calculate_cost(response)`**（`src/minisweagent/models/litellm_model.py:108-126`）\n\n它调用 litellm 自带的成本计算器来得到单次请求的花费：\n\n```python\ncost = litellm.cost_calculator.completion_cost(response, model=self.config.model_name)\n```\n\n- 若 `cost <= 0.0` 或抛异常，则 `cost = 0.0`；并在 `config.cost_tracking != \"ignore_errors\"`（默认 `\"default\"`）时记录 critical 日志并抛 `RuntimeError`（提示可用 `cost_tracking: 'ignore_errors'` 或环境变量 `MSWEA_COST_TRACKING` 忽略）。\n- 返回 `{\"cost\": cost}`。\n\n**累加位置：`LitellmModel.query()`**（`litellm_model.py:85-86`）\n\n```python\ncost_output = self._calculate_cost(response)\nGLOBAL_MODEL_STATS.add(cost_output[\"cost\"])\n```\n\n之后 `cost_output` 还会被合并进返回 message 的 `extra`（以及 `FormatError` 时写回 `e.messages[0][\"extra\"]`），所以每条消息都留存了自己的花费。\n\n**全局统计对象：`GLOBAL_MODEL_STATS`**（`src/minisweagent/models/__init__.py:42`）\n\n它是 `GlobalModelStats` 的实例，负责累计：\n- `add(cost)`：加锁累加 `_cost` 和 `_n_calls`，并检查 `MSWEA_GLOBAL_COST_LIMIT` / `MSWEA_GLOBAL_CALL_LIMIT` 限制，超限抛 `RuntimeError`；\n- 只读属性 `cost` / `n_calls`（`__init__.py:33-39`）；消费方如 `run/benchmarks/utils/batch_progress.py:121` 用 `GLOBAL_MODEL_STATS.cost` 显示总花费。\n\n相关名字汇总：`_calculate_cost`、`query`、`GLOBAL_MODEL_STATS`（`GlobalModelStats.add` / `.cost` / `.n_calls`）、`litellm.cost_calculator.completion_cost`、`cost_tracking` 配置项 / `MSWEA_COST_TRACKING` 环境变量。Portkey/OpenRouter/Requesty 等其它模型类遵循同样的模式（`GLOBAL_MODEL_STATS.add(cost_output[\"cost\"])`），只是 `_calculate_cost` 的实现不同。"
+    },
+    {
+      "task": "swebench 批量运行时 docker 镜像名是怎么拼出来的？给出具体函数名。",
+      "correct": true,
+      "steps": 6,
+      "prompt": 32394,
+      "cached": 22528,
+      "completion": 1330,
+      "chars": 41987,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "grep",
+        "read_file",
+        "read_file"
+      ],
+      "answer": "**函数名：`get_swebench_docker_image_name`**（`src/minisweagent/run/benchmarks/swebench.py:68`），由 `get_sb_environment` 在 `swebench.py:82` 调用。\n\n拼接逻辑（`swebench.py:68-76`）：\n\n```python\ndef get_swebench_docker_image_name(instance: dict) -> str:\n    image_name = instance.get(\"image_name\", None) or instance.get(\"docker_image\", None)\n    if image_name is None:\n        # Docker doesn't allow double underscore, so we replace them with a magic token\n        iid = instance[\"instance_id\"]\n        id_docker_compatible = iid.replace(\"__\", \"_1776_\")\n        image_name = f\"docker.io/swebench/sweb.eval.x86_64.{id_docker_compatible}:latest\".lower()\n    return image_name\n```\n\n即：\n1. 先取数据集样本里已有的 `image_name`（或 `docker_image`）字段，有就直接用；\n2. 否则由 `instance_id` 推导：把 `__` 换成魔术 token `_1776_`（因为 docker tag 不允许连续下划线），套进模板 `docker.io/swebench/sweb.eval.x86_64.<id>:latest` 并整体小写；\n3. 结果由 `get_sb_environment` 写进 `env_config[\"image\"]`——`docker`/`swerex_modal` 直接用，`singularity`/`contree` 前面加 `docker://` 前缀（`swebench.py:83-86`）。\n\n依据：`tests/run/test_swebench.py:80-104` 的四个用例逐个断言了上述规则（含已有 `image_name`、`image_name=None`、多重 `__` 的 `project__sub__module__version__1.2.3`），仓库根目录的 `verify_imgname.py` 也复刻了同样的映射；此环境没有可用的执行工具，故以源码与既有断言交叉核对确认。"
+    },
+    {
+      "task": "DefaultAgent 超过 step limit 之后会抛出什么异常？给出异常类名。",
+      "correct": false,
+      "steps": 10,
+      "prompt": 52014,
+      "cached": 43776,
+      "completion": 881,
+      "chars": 34166,
+      "tools": [
+        "grep",
+        "read_file",
+        "read_file",
+        "grep",
+        "read_file",
+        "grep",
+        "grep",
+        "list_files",
+        "grep",
+        "read_file",
+        "edit_file"
+      ],
+      "answer": ""
+    },
+    {
+      "task": "LitellmModel 是怎么统计 API 花费的？给出相关函数名或全局对象名。",
+      "correct": true,
+      "steps": 3,
+      "prompt": 12566,
+      "cached": 7552,
+      "completion": 1034,
+      "chars": 22918,
+      "tools": [
+        "read_file",
+        "read_file",
+        "grep"
+      ],
+      "answer": "## LitellmModel 的花费统计链路\n\n**1. 计算单次调用花费 —— `LitellmModel._calculate_cost(response)`**\n(`src/minisweagent/models/litellm_model.py:108-126`)\n\n- 调用 litellm 内置的计价器：`litellm.cost_calculator.completion_cost(response, model=self.config.model_name)`。\n- 结果校验 `cost > 0.0`；任何异常（最常见是模型未注册、拿不到价格）都落回 `cost = 0.0`，并根据配置项 `LitellmModelConfig.cost_tracking`（`\"default\"` / `\"ignore_errors\"`，可用环境变量 `MSWEA_COST_TRACKING` 覆盖）决定是记 `logger.critical` 后抛 `RuntimeError`，还是静默忽略。\n- 返回字典形态 `{\"cost\": cost}`（在 `query()` 里以 `cost_output` 名字使用）。\n\n**2. 全局累计 —— `GLOBAL_MODEL_STATS`（`GlobalModelStats` 的单例）**\n(`src/minisweagent/models/litellm_model.py:86`，定义在 `src/minisweagent/models/__init__.py:13-42`)\n\n```python\ncost_output = self._calculate_cost(response)\nGLOBAL_MODEL_STATS.add(cost_output[\"cost\"])\n```\n\n- `GlobalModelStats.add(cost)`：加锁累加 `self._cost`、`self._n_calls`，并在超过上限时抛 `RuntimeError(\"Global cost/call limit exceeded...\")`；上限来自 `MSWEA_GLOBAL_COST_LIMIT` / `MSWEA_GLOBAL_CALL_LIMIT`。\n- 只读接口是属性 `GlobalModelStats.cost` 和 `GlobalModelStats.n_calls`（例如 `run/benchmarks/utils/batch_progress.py:121` 用它展示总花费）。\n- 同一模式被 OpenRouter / Portkey / Requesty / ResponseAPI 各变体复用；`test_models.py` 里则直接 `GLOBAL_MODEL_STATS.add(self.config.cost_per_call)`。\n\n**3. 单步花费随消息/异常传播**\n\n- 正常路径：`query()` 把 `cost_output` 合进 `message[\"extra\"]`（与 `actions`、`response`、`timestamp` 一起）。\n- 格式错误路径：`except FormatError as e: e.messages[0][\"extra\"].update(cost_output)`，保证 `FormatError` 也带上花费（注释里明确写了这条契约）。\n- 消费方是 `DefaultAgent`（`agents/default.py`）：`self.cost += message[...\"extra\"][\"cost\"]`（第 150 行）、异常分支第 102 行同理，再据此做 `cost_limit` 步数/金额限制与 `\"instance_cost\": self.cost` 输出。\n\n**结论**：相关标识符是 `LitellmModel._calculate_cost`、`litellm.cost_calculator.completion_cost`、`LitellmModelConfig.cost_tracking` / `MSWEA_COST_TRACKING`、全局对象 `GLOBAL_MODEL_STATS`（类 `GlobalModelStats`，方法 `add`，属性 `cost`/`n_calls`），以及消息侧的 `message[\"extra\"][\"cost\"]` 和消费它的 `DefaultAgent.cost`。"
+    },
+    {
+      "task": "swebench 批量运行时 docker 镜像名是怎么拼出来的？给出具体函数名。",
+      "correct": false,
+      "steps": 10,
+      "prompt": 113163,
+      "cached": 97664,
+      "completion": 3460,
+      "chars": 70997,
+      "tools": [
+        "grep",
+        "grep",
+        "read_file",
+        "read_file",
+        "read_file",
+        "edit_file",
+        "grep",
+        "edit_file",
+        "grep",
+        "read_file",
+        "grep",
+        "grep",
+        "grep",
+        "read_file",
+        "list_files",
+        "read_file",
+        "read_file",
+        "read_file"
+      ],
+      "answer": ""
+    },
+    {
+      "task": "DefaultAgent 超过 step limit 之后会抛出什么异常？给出异常类名。",
+      "correct": true,
+      "steps": 9,
+      "prompt": 62850,
+      "cached": 53376,
+      "completion": 1186,
+      "chars": 39661,
+      "tools": [
+        "grep",
+        "read_file",
+        "read_file",
+        "grep",
+        "read_file",
+        "grep",
+        "grep",
+        "list_files",
+        "read_file",
+        "grep"
+      ],
+      "answer": "**异常类名：`LimitsExceeded`**（`minisweagent.exceptions.LimitsExceeded`，继承自 `InterruptAgentFlow`）。\n\n依据：`src/minisweagent/agents/default.py:132-139` 的 `query()` 开头判断 `if 0 < self.config.step_limit <= self.n_calls ...: raise LimitsExceeded(...)`；`run()` 在 `except InterruptAgentFlow` 中捕获它，把它转为 role=\"exit\" 的消息，因此对外表现为 `exit_status == \"LimitsExceeded\"`（`tests/agents/test_default.py:154-170` 的 `test_step_limit_enforcement` 正是断言这一点）。注意 cost limit 抛的也是同一个 `LimitsExceeded`，而 wall-time limit 抛的是其子类 `TimeExceeded`。\n\n无法在此环境执行命令，故未能运行 `verify_step_limit.py`；结论是通过源码与已有测试的断言交叉确认的（当前工具集不含 shell 执行）。"
+    },
+    {
+      "task": "LitellmModel 是怎么统计 API 花费的？给出相关函数名或全局对象名。",
+      "correct": true,
+      "steps": 3,
+      "prompt": 15416,
+      "cached": 7680,
+      "completion": 773,
+      "chars": 32761,
+      "tools": [
+        "grep",
+        "list_files",
+        "read_file",
+        "read_file"
+      ],
+      "answer": "**LitellmModel 的花费统计机制**\n\n相关函数/对象：\n\n1. **`LitellmModel._calculate_cost(response)`** — 核心：调用 `litellm.cost_calculator.completion_cost(response, model=self.config.model_name)` 计算单次调用花费，返回 `{\"cost\": cost}`。\n   - 若 `cost <= 0.0` 视为异常；异常时按配置 `cost_tracking`（`LitellmModelConfig.cost_tracking`，默认取环境变量 `MSWEA_COST_TRACKING`，可选 `\"default\"` / `\"ignore_errors\"`）决定是抛出 `RuntimeError` 还是把 cost 记 0。\n\n2. **全局累计对象 `GLOBAL_MODEL_STATS`**（`src/minisweagent/models/__init__.py`）— `GlobalModelStats` 的单例实例，用 `GLOBAL_MODEL_STATS.add(cost)` 累加花费并计数调用次数，超过 `MSWEA_GLOBAL_COST_LIMIT` / `MSWEA_GLOBAL_CALL_LIMIT` 时抛错；通过 `.cost` / `.n_calls` 属性读取。\n\n3. **`LitellmModel.query(messages, **kwargs)`** — 调用处：`cost_output = self._calculate_cost(response)` 然后 `GLOBAL_MODEL_STATS.add(cost_output[\"cost\"])`，并把 `cost` 写进返回 message 的 `extra`（`**cost_output`）；发生 `FormatError` 时同样把 cost 写入 `e.messages[0][\"extra\"]`。\n\n4. 辅助项：`LitellmModelConfig.litellm_model_registry` → `litellm.utils.register_model(...)`（在 `__init__` 中注册模型，供成本计算查询模型价格）。\n\n（同类实现可见 `litellm_response_model.py`、`portkey_model.py`、`openrouter_model.py` 等，模式一致。）"
+    }
+  ]
+}
