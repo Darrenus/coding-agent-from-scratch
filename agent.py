@@ -13,7 +13,7 @@ KEY_PATH = os.path.expanduser("~/.config/agent-from-scratch/env")
 
 MAX_HITS = 200
 
-WORKSPACE = os.path.realpath(".")
+WORKSPACE = os.path.realpath(os.environ.get("AGENT_WORKSPACE", "."))
 assert os.path.isabs(WORKSPACE) and WORKSPACE != os.sep, f"WORKSPACE 不合法: {WORKSPACE!r}"
 
 DENY_PATTERNS = (".env", ".git/", "id_rsa", ".pem", ".key", "credential", ".netrc")
@@ -227,6 +227,20 @@ SYSTEM_PROMPT = """你是一个命令行 coding agent，工作目录就是当前
 
 WRITE_TOOLS = {"edit_file"}
 
+def build_repo_map(task, max_files=12):
+    """为这个任务生成一张仓库地图。失败时返回空串，不影响主流程。"""
+    try:
+        import repomap
+        tags = repomap.scan_repo(WORKSPACE)
+        if not tags:
+            return ""
+        edges, definers = repomap.build_graph(tags, root=WORKSPACE)
+        weights = repomap.edge_weights(edges, definers)
+        seed = repomap.task_personalization(task, tags, WORKSPACE)
+        rank = repomap.pagerank(list(tags), weights, personalization=seed)
+        return repomap.render_map(tags, rank, max_files)
+    except Exception as exc:
+        return f"（仓库地图生成失败：{type(exc).__name__}: {exc}）"
 
 def interactive_approve(name, arguments_json):
     """写操作需人工确认；只读工具直接放行，避免审批疲劳。"""
@@ -242,13 +256,18 @@ def always_approve(name, arguments_json):
     return True
 
 
-def run_agent(task, max_steps=10, verbose=True, approve=None):
+def run_agent(task, max_steps=10, verbose=True, approve=None, repo_map=False):
     """跑一个任务。返回答案、用量，以及完整的调用轨迹。"""
     approve = approve or interactive_approve
+    user_content = task
+    if repo_map:
+        mapping = build_repo_map(task)
+        if mapping:
+            user_content = f"{mapping}\n\n（以上是自动生成的参考，不保证完整。）\n\n任务：{task}"
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": task},
+        {"role": "user", "content": user_content},
     ]
     totals = {"steps": 0, "prompt": 0, "completion": 0, "cached": 0}
     trace = []
