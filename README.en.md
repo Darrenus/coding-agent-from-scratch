@@ -5,9 +5,9 @@
 A terminal coding agent written from scratch, with no agent framework. Every line
 is hand-written, and every design decision has to come with a reason.
 
-~1,300 lines of core code plus ~800 lines of experiments and evaluation. Seven tools
+~1,140 lines of core code plus ~520 lines of experiments and evaluation. Seven tools
 (`read_file` / `list_files` / `grep` / `edit_file` / `bash` / `delegate` / `run_tests`),
-52 tests.
+60 tests.
 
 > Modules 0–9 are complete. Every number below comes from raw data committed under
 > `results/` and can be re-derived. **Nothing is stated as a conclusion unless it was
@@ -167,7 +167,8 @@ assembled when swebench runs in batch" extracted **zero** seeds — because the 
 called `get_swebench_docker_image_name` and the file is `swebench.py`, and humans do
 not talk that way. Worse, with an empty seed PageRank silently falls back to a uniform
 distribution and **emits a plausible-looking ranking that has nothing to do with the
-task** (fail-open, again).
+task** (fail-open, again). This is now fail-closed: when no task word matches any file,
+no map is injected — no map beats a map unrelated to the task.
 
 The second version summed over "how many symbols matched", which turned into sorting by
 file size: asked about `LitellmModel`, the top hit was `portkey_response_model.py` —
@@ -445,7 +446,7 @@ the operation actually ran** — the `[exit code` marker only appears once
 | Situation | What fail-open would mean | What was done |
 |---|---|---|
 | `WORKSPACE` config degrading to an empty string | the boundary check becomes decorative | assertion at startup |
-| 429 indistinguishable between rate limit and empty balance | six wasted back-offs | classify by message; empty balance fails immediately |
+| 429 can mean either a rate limit or an empty balance | back-offs wasted on an account that cannot pay | 402, or 429 whose message mentions balance / quota, is treated as billing and fails immediately; rate limits, 5xx, timeouts and dropped connections back off 2 / 4 / 8 / 16 s, at most 4 retries |
 | sandbox unavailable | commands run unconstrained | `REQUIRE_SANDBOX` refuses to execute |
 | no terminal available | **equivalent to auto-approving every write** | refuse |
 
@@ -571,8 +572,13 @@ whether `delegate` existed. 3 breadth tasks × 3 rounds:
 | **completion rate** | 56% | 56% | 0% | 22% | **✗ no difference** |
 | **correctness** | 56% | 56% | 0% | 22% | **✗ no difference** |
 
-**Net: 42% more tokens buys 22% less main context, with no change in completion or
-correctness — a loss at this scale.**
+(The Effect column uses the report's uniform convention, `|arm − baseline| / baseline`, with
+the delegation arm as baseline. So +42% means "no delegation uses 42% less"; the other way
+round, delegation uses **1.71×** as much. This section first said "42% more", with the
+denominator flipped; corrected.)
+
+**Net: delegation uses 1.7× the total tokens (71% more) to buy 22% less main context, with
+no change in completion or correctness — a loss at this scale.**
 
 **A single observation misled me again.** The first forced-delegation run was the only
 one of three configurations to reach `finished`, and I wrote that "it turned failure into
@@ -668,6 +674,8 @@ report a number you could not measure"**.
 | the model's grep calls kept failing while the agent reported nothing | the schema was written, the registry was not. Fault tolerance silenced the bug; fix: assert the two agree at startup, and print `⚠` on tool errors |
 | the model used a partial line as an insertion anchor and all four strategies failed | strategy 1 is character-level while strategies 2–4 compared whole lines. That assumption was never written into any interface, so the model violated it. Fix: make the normalisation layer character-level too (normalise + index mapping), solving trailing whitespace and partial lines at once |
 | an end-to-end experiment passed 10/10 while a `NameError` sat in the code | a refactor deleted strategy 2's intermediate variable while strategy 3 still referenced it. That branch **never executed**, so the integration run looked perfectly healthy — caught by a unit test. **End-to-end only covers the paths actually taken** |
+| the README claimed rate limits and empty balance were told apart, but the code did not do it | a design was written up as if implemented; found while checking the README line by line against the code, then implemented with 6 unit tests (`CallModelRetryTests`) |
+| the sub-agent cost was written as "42% more" | the delegation arm was the denominator, giving "no delegation uses 42% less", which was then flipped into "delegation uses 42% more"; it is actually 71% more |
 | 12 experiment runs before noticing the described bug did not exist | the agent was asked to fix "percent == 100 is wrongly rejected" when the code was already correct. It correctly refused to fabricate a change, but one run burned 48k tokens searching. **A task set must be validated before use** — the contract is now pinned by `test_cart.py` |
 
 ## Design conventions
