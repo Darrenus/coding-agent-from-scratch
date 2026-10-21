@@ -144,6 +144,7 @@ def run_once(task, config, root, max_steps):
         "finished": 1 if out["exit_reason"] == "finished" else 0,
         "steps": out["steps"], "prompt": out["prompt"], "cached": out["cached"],
         "completion": out["completion"],
+        "retries": out.get("retries", 0),
         # uncached 含子 agent：主循环未命中 + 子 agent 未命中
         "uncached": (out["prompt"] - out["cached"])
                     + (out.get("sub_prompt", 0) - out.get("sub_cached", 0)),

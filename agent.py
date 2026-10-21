@@ -7,6 +7,7 @@ import sandbox
 import subprocess
 import editor
 import sys
+import time
 
 API_URL = "https://api.deepseek.com/v1/chat/completions"
 MODEL = "deepseek-v4-flash"
@@ -361,22 +362,55 @@ def load_key():
 API_KEY = load_key()
 
 
+MAX_RETRIES = 4                # 限流、服务端错误、超时最多重试几次
+RETRY_BASE_DELAY = 2.0         # 指数退避的起点（秒）：2、4、8、16
+# 欠费和限流可能共用 429，只能按错误文案区分
+BILLING_MARKERS = ("insufficient balance", "insufficient_balance", "quota", "arrear", "余额", "欠费")
+
+
+class ModelCallError(RuntimeError):
+    """模型调用失败，而且重试解决不了。"""
+
+
+def _is_billing_error(status, text):
+    return status == 402 or (status == 429 and any(m in text.lower() for m in BILLING_MARKERS))
+
+
 def call_model(messages, tools=None):
-    """发一次请求，返回 (message, usage)。"""
+    """发一次请求，返回 (message, usage)。
+
+    限流、5xx、超时和断连按指数退避重试；欠费和其他 4xx 立即失败——
+    重试解决不了的错误，重试只是白白等待（fail-closed）。重试次数记在 usage["retries"]。
+    """
     payload = {"model": MODEL, "messages": messages}
     if tools:
         payload["tools"] = tools
 
-    response = requests.post(
-        API_URL,
-        headers={"Authorization": f"Bearer {API_KEY}"},
-        json=payload,
-        timeout=120,
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data["choices"][0]["message"], data.get("usage", {})
-
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            response = requests.post(
+                API_URL,
+                headers={"Authorization": f"Bearer {API_KEY}"},
+                json=payload,
+                timeout=120,
+            )
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            error = f"{type(exc).__name__}: {exc}"
+        else:
+            status = response.status_code
+            if status < 400:
+                data = response.json()
+                usage = dict(data.get("usage", {}), retries=attempt)
+                return data["choices"][0]["message"], usage
+            text = response.text[:300]
+            if _is_billing_error(status, text):
+                raise ModelCallError(f"账户欠费或额度用尽（HTTP {status}），重试没有意义：{text}")
+            if status != 429 and status < 500:
+                raise ModelCallError(f"请求本身有错（HTTP {status}），重试没有意义：{text}")
+            error = f"HTTP {status}: {text}"
+        if attempt < MAX_RETRIES:
+            time.sleep(RETRY_BASE_DELAY * 2 ** attempt)
+    raise ModelCallError(f"重试 {MAX_RETRIES} 次后仍然失败：{error}")
 
 # ── agent 循环 ────────────────────────────────────────────
 
@@ -403,6 +437,10 @@ def build_repo_map(task, max_files=12):
         edges, definers = repomap.build_graph(tags, root=WORKSPACE)
         weights = repomap.edge_weights(edges, definers)
         seed = repomap.task_personalization(task, tags, WORKSPACE)
+        if not seed:
+            # 任务词一个文件都没命中时，PageRank 只能退回均匀分布，排出一份看起来
+            # 像样、实际与任务无关的名单。宁可不给地图（fail-closed）。
+            return ""
         rank = repomap.pagerank(list(tags), weights, personalization=seed)
         return repomap.render_map(tags, rank, max_files)
     except Exception as exc:
@@ -451,7 +489,7 @@ def run_agent(task, max_steps=10, verbose=True, approve=None, repo_map=False, al
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_content},
     ]
-    totals = {"steps": 0, "prompt": 0, "completion": 0, "cached": 0}
+    totals = {"steps": 0, "prompt": 0, "completion": 0, "cached": 0, "retries": 0}
     trace = []
     per_call = []
 
@@ -479,12 +517,13 @@ def run_agent(task, max_steps=10, verbose=True, approve=None, repo_map=False, al
         totals["prompt"] += usage.get("prompt_tokens", 0)
         totals["completion"] += usage.get("completion_tokens", 0)
         totals["cached"] += usage.get("prompt_cache_hit_tokens", 0)
-
+        totals["retries"] += usage.get("retries", 0)
         per_call.append({
             "step": step,
             "prompt": usage.get("prompt_tokens", 0),
             "cached": usage.get("prompt_cache_hit_tokens", 0),
             "completion": usage.get("completion_tokens", 0),
+            "retries": usage.get("retries", 0),
         })
 
         if verbose and message.get("content"):

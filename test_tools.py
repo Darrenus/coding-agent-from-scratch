@@ -221,5 +221,75 @@ class DelegateTests(unittest.TestCase):
         import agent as A
         self.assertTrue(set(A.READ_ONLY_TOOLS).issubset(set(A.TOOL_REGISTRY)))
 
+class FakeResponse:
+    def __init__(self, status, text="", body=None):
+        self.status_code = status
+        self.text = text
+        self._body = body
+
+    def json(self):
+        return self._body
+
+OK = FakeResponse(200, body={"choices": [{"message": {"content": "好"}}],
+                             "usage": {"prompt_tokens": 10}})
+
+class CallModelRetryTests(unittest.TestCase):
+    """模型调用的重试策略。不联网：requests.post 和 time.sleep 都被替换掉。"""
+
+    def call(self, responses):
+        from unittest import mock
+        import agent as A
+        with mock.patch.object(A.requests, "post", side_effect=responses) as post, \
+             mock.patch.object(A.time, "sleep") as sleep:
+            try:
+                return A.call_model([]), post.call_count, [c.args[0] for c in sleep.call_args_list]
+            except A.ModelCallError as exc:
+                return exc, post.call_count, [c.args[0] for c in sleep.call_args_list]
+
+    def test_rate_limit_is_retried_then_succeeds(self):
+        out, calls, sleeps = self.call([FakeResponse(429, "Rate Limit Reached"), OK])
+        message, usage = out
+        self.assertEqual(message["content"], "好")
+        self.assertEqual((calls, sleeps, usage["retries"]), (2, [2.0], 1))
+
+    def test_server_error_and_dropped_connection_are_retried(self):
+        import requests
+        out, calls, sleeps = self.call([FakeResponse(503, "busy"), requests.ConnectionError("reset"), OK])
+        self.assertEqual((calls, sleeps, out[1]["retries"]), (3, [2.0, 4.0], 2))
+
+    def test_insufficient_balance_fails_without_retrying(self):
+        out, calls, sleeps = self.call([FakeResponse(402, "Insufficient Balance"), OK])
+        self.assertIn("欠费", str(out))
+        self.assertEqual((calls, sleeps), (1, []))
+
+    def test_billing_message_on_429_is_not_mistaken_for_rate_limit(self):
+        # 同一个 429，只有文案能区分欠费和限流
+        out, calls, sleeps = self.call([FakeResponse(429, "You exceeded your current quota"), OK])
+        self.assertIn("欠费", str(out))
+        self.assertEqual((calls, sleeps), (1, []))
+
+    def test_other_client_errors_are_not_retried(self):
+        out, calls, sleeps = self.call([FakeResponse(400, "bad request"), OK])
+        self.assertIn("HTTP 400", str(out))
+        self.assertEqual((calls, sleeps), (1, []))
+
+    def test_gives_up_after_max_retries(self):
+        import agent as A
+        out, calls, sleeps = self.call([FakeResponse(429, "Rate Limit Reached")] * (A.MAX_RETRIES + 1))
+        self.assertIn("仍然失败", str(out))
+        self.assertEqual(calls, A.MAX_RETRIES + 1)
+        self.assertEqual(sleeps, [2.0, 4.0, 8.0, 16.0])
+
+class RepoMapSeedTests(unittest.TestCase):
+    def test_task_matching_no_file_gets_no_map(self):
+        # 种子为空时 PageRank 会退回均匀分布——那份排名与任务无关，不该注入
+        import agent as A
+        self.assertEqual(A.build_repo_map("qzxv wpkr"), "")
+
+    def test_task_matching_a_file_still_gets_a_map(self):
+        # 上一条的对照：确认地图本身没坏，否则上一条恒绿
+        import agent as A
+        self.assertIn("editor.py", A.build_repo_map("find_match 在 editor 里怎么定位"))
+
 if __name__ == "__main__":
     unittest.main()
